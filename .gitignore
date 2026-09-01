@@ -1,0 +1,4 @@
+.build/
+*.wav
+*.md.bak
+.DS_Store
