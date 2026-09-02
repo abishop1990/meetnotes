@@ -20,7 +20,21 @@ enum Settings {
 
     static var systemDeviceID: String? { d.string(forKey: systemDeviceIDKey) }
     static var micDeviceID: String? { d.string(forKey: micDeviceIDKey) }
-    static var keepAudio: Bool { d.bool(forKey: keepAudioKey) }
+    /// Default on: the recordings are what make re-running speaker separation with other settings possible.
+    static var keepAudio: Bool { d.object(forKey: keepAudioKey) as? Bool ?? true }
+
+    static let expectedSpeakersKey = "expectedSpeakers"
+    static let diarizationThresholdKey = "diarizationThreshold"
+    /// Ceiling on remote voices (sherpa-onnx treats num_clusters as a cap, not a target), nil = uncapped.
+    static var expectedSpeakers: Int? {
+        let n = d.integer(forKey: expectedSpeakersKey)
+        return n > 0 ? n : nil
+    }
+    /// Clustering distance cutoff; larger merges more. 0.7 is the value pyannote 3.1 ships with.
+    static var diarizationThreshold: Double {
+        let t = d.double(forKey: diarizationThresholdKey)
+        return t > 0 ? t : 0.7
+    }
 
     static var modelURL: URL { home.appendingPathComponent(".whisper/ggml-large-v3-turbo.bin") }
     static let modelDownloadURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin")!

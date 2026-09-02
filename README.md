@@ -13,8 +13,8 @@ country, and most employers have a policy; this tool does nothing to hide itself
 - Two inputs are captured as separate tracks: the Meet audio (via BlackHole) and your mic. The transcript
   labels paragraphs **You** / **Others** from which track carried the sound. Whisper cannot tell remote
   voices apart from each other.
-- Audio files are deleted after a successful transcription unless *Keep audio file* is ticked. On a failure
-  they are always kept so nothing is lost; re-run with the CLI below.
+- Audio files are kept next to the note by default (untick *Keep audio* to delete them after a successful
+  transcription). Keeping them is what makes re-running speaker separation with other settings possible.
 - *Launch at login* in the popover registers the app as a login item (System Settings → General → Login Items).
 - `vocabulary.txt` in the notes folder is fed to whisper as a bias prompt. Add any term it keeps mangling.
 
@@ -70,8 +70,22 @@ Whisper transcribes; it does not identify voices. Two layers add that:
 
    The note then opens with a **Speakers** section (talk time and first appearance per voice) so the labels
    can be renamed in one pass, by hand or by handing the file to an LLM with the attendee list. Remote speech
-   the separator could not place stays labelled *Others*. Accuracy is good for two to four clear voices and
-   drops when people talk over each other.
+   the separator could not place stays labelled *Others*; voices with under 8 s of speech are folded into
+   *Others* too, since those are almost always fragments of someone already labelled.
+
+   **Tuning.** Real calls over-split more than clean audio does. Two knobs:
+
+   - *Max remote voices* in the popover caps the cluster count. Set it to the number of other people on the
+     call. (sherpa-onnx treats it as a ceiling, not a target.)
+   - The clustering threshold, default 0.7 (pyannote 3.1's tuned value); larger merges more. Set it with
+     `defaults write com.alanbishop.meetnotes diarizationThreshold -float 0.8` or `--threshold` on the CLI.
+
+   Every note ends its header with a collapsed **Diagnostics** block: per-track signal levels and what the
+   separator did. Audio is kept by default so a note can be regenerated with different settings:
+
+   ```bash
+   .build/release/MeetNotes --transcribe X-others.wav --mic X-you.wav --name "X" --speakers 8 --threshold 0.8
+   ```
 
 ## Requirements
 

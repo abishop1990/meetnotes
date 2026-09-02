@@ -71,6 +71,17 @@ enum AudioMix {
 }
 
 extension AudioMix {
+    /// One-line level summary for the note's Diagnostics section: how much of the track had signal and how loud.
+    static func describe(_ name: String, _ energy: [Float]) -> String {
+        let active = energy.filter { $0 >= Diarizer.silenceRMS }
+        guard !energy.isEmpty, !active.isEmpty else { return "\(name): silent" }
+        let pct = Int((Double(active.count) / Double(energy.count) * 100).rounded())
+        let avg = active.reduce(0, +) / Float(active.count)
+        let peak = active.max() ?? avg
+        let db = { (v: Float) in Int((20 * log10(max(v, 1e-6))).rounded()) }
+        return "\(name): active \(pct)% of the time, avg \(db(avg)) dBFS, peak \(db(peak)) dBFS"
+    }
+
     /// Per-bin RMS of one 16 kHz mono file.
     static func energyProfile(_ url: URL) throws -> [Float] {
         let f = try AVAudioFile(forReading: url)
@@ -113,29 +124,18 @@ enum Diarizer {
         segments.filter { meanEnergy(energy, fromMs: $0.fromMs, toMs: $0.toMs, binMs: binMs) >= silenceRMS }
     }
 
-    /// Attribute each whisper segment to whichever track was louder over its span. Near-silent segments
-    /// (whisper hallucinating on a pause) inherit the previous speaker rather than flipping.
+    /// Attribute each whisper segment to whichever track carried it. The remote track is clean (Meet never
+    /// plays your own mic back), so when you talk it is near silent; when others talk the mic hears at most a
+    /// quiet echo through speakers. A fixed absolute floor plus a ratio is enough; no per-track statistics,
+    /// which go wrong when one track is speech most of the time.
     static func label(_ segments: [Segment], others: [Float], you: [Float], binMs: Int) -> [Segment] {
-        // noise floor: 2x the median bin energy of the quieter track, with a small absolute floor
-        func floor(_ e: [Float]) -> Float {
-            guard !e.isEmpty else { return 0.002 }
-            let s = e.sorted(); return max(0.002, s[s.count / 2] * 2)
-        }
-        let floorO = max(floor(others), silenceRMS), floorY = max(floor(you), silenceRMS)
-        var last = Diarizer.others
         return segments.compactMap { seg in
-            var s = seg
             let eo = meanEnergy(others, fromMs: seg.fromMs, toMs: seg.toMs, binMs: binMs)
             let ey = meanEnergy(you, fromMs: seg.fromMs, toMs: seg.toMs, binMs: binMs)
             if eo < silenceRMS && ey < silenceRMS { return nil }
-            let oSpeaking = eo > floorO, ySpeaking = ey > floorY
-            switch (oSpeaking, ySpeaking) {
-            case (true, false): last = Diarizer.others
-            case (false, true): last = Diarizer.you
-            case (true, true): last = ey > eo * 1.5 ? Diarizer.you : Diarizer.others
-            case (false, false): break
-            }
-            s.speaker = last
+            var s = seg
+            let youWins = ey >= silenceRMS && (eo < silenceRMS || ey > eo * 1.5)
+            s.speaker = youWins ? Diarizer.you : Diarizer.others
             return s
         }
     }

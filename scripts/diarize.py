@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Offline speaker diarization with sherpa-onnx.
 
-usage: diarize.py FILE.wav [NUM_SPEAKERS]
+usage: diarize.py FILE.wav [--speakers N] [--threshold T]
 FILE must be 16 kHz mono 16-bit PCM. Prints JSON: [{"start": s, "end": s, "speaker": n}, ...]
-NUM_SPEAKERS defaults to -1 (estimate from the audio).
+--speakers   ceiling on the number of speakers (sherpa-onnx treats it as a cap), -1 (default) = none
+--threshold  clustering distance cutoff used when estimating; larger merges more (default 0.7)
 """
 import json
 import os
@@ -20,9 +21,10 @@ def main() -> int:
     if len(sys.argv) < 2:
         print(__doc__, file=sys.stderr)
         return 2
-    path = sys.argv[1]
-    num_speakers = int(sys.argv[2]) if len(sys.argv) > 2 else -1
-    threshold = float(os.environ.get("MEETNOTES_DIARIZE_THRESHOLD", "0.5"))
+    args = sys.argv[1:]
+    path = args[0]
+    num_speakers = int(args[args.index("--speakers") + 1]) if "--speakers" in args else -1
+    threshold = float(args[args.index("--threshold") + 1]) if "--threshold" in args else 0.7
 
     config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
         segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
@@ -36,6 +38,7 @@ def main() -> int:
             num_threads=max(2, (os.cpu_count() or 4) - 2),
         ),
         clustering=sherpa_onnx.FastClusteringConfig(num_clusters=num_speakers, threshold=threshold),
+        # keep segmentation at its defaults; fragment clusters are folded away downstream instead
         min_duration_on=0.3,
         min_duration_off=0.5,
     )

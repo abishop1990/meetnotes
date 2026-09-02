@@ -75,7 +75,7 @@ enum MarkdownFormatter {
         return "\(mins / 60) h \(mins % 60) min"
     }
 
-    static func render(meta: NoteMetadata, segments: [Segment]) -> String {
+    static func render(meta: NoteMetadata, segments: [Segment], diagnostics: [String] = []) -> String {
         let df = DateFormatter()
         df.dateFormat = "EEEE, MMMM d, yyyy · HH:mm zzz"
 
@@ -88,6 +88,12 @@ enum MarkdownFormatter {
 
         md += "## Specs & decisions to confirm\n\n- [ ] \n\n"
         md += "## Action items\n\n- [ ] \n\n"
+        if !diagnostics.isEmpty {
+            md += "<details><summary>Diagnostics</summary>\n\n"
+            for d in diagnostics { md += "- \(d)\n" }
+            md += "\n</details>\n\n"
+        }
+
         let paras = paragraphs(segments)
         let speakers = speakerSummary(segments)
         if !speakers.isEmpty {

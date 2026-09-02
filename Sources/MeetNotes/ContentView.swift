@@ -7,7 +7,8 @@ struct ContentView: View {
 
     @AppStorage(Settings.systemDeviceIDKey) private var systemID: String = ""
     @AppStorage(Settings.micDeviceIDKey) private var micID: String = ""
-    @AppStorage(Settings.keepAudioKey) private var keepAudio: Bool = false
+    @AppStorage(Settings.keepAudioKey) private var keepAudio: Bool = true
+    @AppStorage(Settings.expectedSpeakersKey) private var expectedSpeakers: Int = 0
     @AppStorage(Settings.notesDirKey) private var notesDirPath: String = ""
     @State private var name: String = ""
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
@@ -66,7 +67,7 @@ struct ContentView: View {
                 Button("Change…", action: chooseFolder).disabled(recorder.isBusy)
             }
 
-            Toggle("Keep audio file after transcribing", isOn: $keepAudio)
+            Toggle("Keep audio (lets you re-run speaker separation)", isOn: $keepAudio)
                 .toggleStyle(.checkbox)
             Toggle("Launch at login", isOn: $launchAtLogin)
                 .toggleStyle(.checkbox)
@@ -222,6 +223,16 @@ struct ContentView: View {
         if diarInstalled {
             Toggle("Separate remote voices (Voice 1, Voice 2, …)", isOn: $diarEnabled)
                 .toggleStyle(.checkbox).font(.caption)
+            if diarEnabled {
+                HStack(spacing: 6) {
+                    Text("Max remote voices:").font(.caption).foregroundStyle(.secondary)
+                    TextField("auto", value: $expectedSpeakers, format: .number)
+                        .textFieldStyle(.roundedBorder).frame(width: 52).font(.caption)
+                        .disabled(recorder.isBusy)
+                    Text("0 = no cap").font(.caption).foregroundStyle(.secondary)
+                }
+                .help("Ceiling on how many remote voices the separator may produce. Set it to the number of other people on the call to stop one person splitting into many labels.")
+            }
         } else if diarInstalling {
             HStack { ProgressView().controlSize(.small); Text("Installing speaker separation (pip + ~50 MB models)…").font(.caption) }
         } else {

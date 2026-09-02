@@ -194,13 +194,13 @@ final class Recorder: NSObject, ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let segments: [Segment]
+                let t: Transcript
                 if let o = tracks.first(where: { $0.role == .others }), let y = tracks.first(where: { $0.role == .you }) {
-                    segments = try Transcriber.transcribe(others: o.url, you: y.url, prompt: prompt)
+                    t = try Transcriber.transcribe(others: o.url, you: y.url, prompt: prompt)
                 } else {
-                    segments = try Transcriber.transcribe(wav: tracks[0].url, prompt: prompt)
+                    t = try Transcriber.transcribe(wav: tracks[0].url, prompt: prompt)
                 }
-                let md = MarkdownFormatter.render(meta: meta, segments: segments)
+                let md = MarkdownFormatter.render(meta: meta, segments: t.segments, diagnostics: t.diagnostics)
                 try md.write(to: mdURL, atomically: true, encoding: .utf8)
                 if !keep { for t in tracks { try? FileManager.default.removeItem(at: t.url) } }
                 DispatchQueue.main.async {
