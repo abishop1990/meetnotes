@@ -48,7 +48,8 @@ enum Transcriber {
         defer { try? FileManager.default.removeItem(at: norm) }
         let segments = try runWhisper(on: norm, prompt: prompt)
         let energy = try AudioMix.energyProfile(norm)
-        return Diarizer.dropSilent(segments, energy: energy, binMs: AudioMix.binMs)
+        let kept = Diarizer.dropSilent(segments, energy: energy, binMs: AudioMix.binMs)
+        return try separateVoices(kept, remoteTrack: norm)
     }
 
     /// Two recordings made side by side (Meet output + your mic): transcribe the mix once, then label each
@@ -62,7 +63,16 @@ enum Transcriber {
         defer { try? FileManager.default.removeItem(at: mixed.url) }
 
         let segments = try runWhisper(on: mixed.url, prompt: prompt)
-        return Diarizer.label(segments, others: mixed.energyA, you: mixed.energyB, binMs: AudioMix.binMs)
+        let labelled = Diarizer.label(segments, others: mixed.energyA, you: mixed.energyB, binMs: AudioMix.binMs)
+        return try separateVoices(labelled, remoteTrack: a)
+    }
+
+    /// Optional pass: split the remote side into Voice 1..N when the diarization stack is installed.
+    /// A diarizer failure is reported, not swallowed, but only after the transcript itself succeeded.
+    private static func separateVoices(_ segments: [Segment], remoteTrack: URL) throws -> [Segment] {
+        guard Diarization.isInstalled, Diarization.isEnabled else { return segments }
+        let turns = try Diarization.run(wav16k: remoteTrack)
+        return Diarization.attribute(segments, turns: turns)
     }
 
     private static func runWhisper(on wav16k: URL, prompt: String?) throws -> [Segment] {

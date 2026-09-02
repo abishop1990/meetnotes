@@ -39,6 +39,21 @@ enum MarkdownFormatter {
         return out
     }
 
+    struct SpeakerStat { let name: String; let seconds: Double; let firstMs: Int }
+
+    /// Talk time per label, in order of first appearance. Empty when nothing was labelled.
+    static func speakerSummary(_ segments: [Segment]) -> [SpeakerStat] {
+        var order: [String] = []
+        var secs: [String: Double] = [:]
+        var first: [String: Int] = [:]
+        for s in segments {
+            guard let sp = s.speaker, !clean(s.text).isEmpty else { continue }
+            if first[sp] == nil { first[sp] = s.fromMs; order.append(sp) }
+            secs[sp, default: 0] += Double(s.toMs - s.fromMs) / 1000
+        }
+        return order.map { SpeakerStat(name: $0, seconds: secs[$0] ?? 0, firstMs: first[$0] ?? 0) }
+    }
+
     static func clean(_ raw: String) -> String {
         var t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         // whisper emits markers like [BLANK_AUDIO], (silence), [Music] on quiet stretches
@@ -73,12 +88,19 @@ enum MarkdownFormatter {
 
         md += "## Specs & decisions to confirm\n\n- [ ] \n\n"
         md += "## Action items\n\n- [ ] \n\n"
-        md += "## Transcript\n\n"
-        if paragraphs(segments).contains(where: { $0.speaker != nil }) {
-            md += "_\"You\" is your microphone; \"Others\" is everyone on the call. Whisper does not tell remote voices apart._\n\n"
+        let paras = paragraphs(segments)
+        let speakers = speakerSummary(segments)
+        if !speakers.isEmpty {
+            md += "## Speakers\n\n"
+            for sp in speakers {
+                md += "- **\(sp.name)** — \(duration(sp.seconds)), first at \(stamp(sp.firstMs))\n"
+            }
+            md += "\n_Rename the Voice N labels once you know who is who. \"You\" is your microphone; " +
+                  "\"Others\" is remote speech the separator could not attribute._\n\n"
         }
 
-        let paras = paragraphs(segments)
+        md += "## Transcript\n\n"
+
         if paras.isEmpty {
             md += "_No speech detected._\n"
         } else {

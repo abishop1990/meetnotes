@@ -13,6 +13,10 @@ struct ContentView: View {
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @State private var launchError: String? = nil
     @State private var route = SystemOutput.status()
+    @State private var diarInstalled = Diarization.isInstalled
+    @State private var diarInstalling = false
+    @State private var diarError: String? = nil
+    @AppStorage(Diarization.enabledKey) private var diarEnabled: Bool = true
     @State private var routeError: String? = nil
 
     private var whisperFound: Bool { Transcriber.findWhisper() != nil }
@@ -87,6 +91,7 @@ struct ContentView: View {
             model.refresh()
             launchAtLogin = LaunchAtLogin.isEnabled
             route = SystemOutput.status()
+            diarInstalled = Diarization.isInstalled
             let ids = Set(recorder.devices.map { $0.uniqueID })
             if systemID.isEmpty || !ids.contains(systemID) {
                 systemID = AudioDevices.preferredSystem(from: recorder.devices)?.uniqueID ?? ""
@@ -114,6 +119,7 @@ struct ContentView: View {
                             routeError = nil
                         } catch { routeError = error.localizedDescription }
                         route = SystemOutput.status()
+            diarInstalled = Diarization.isInstalled
                     }
                     .controlSize(.small)
                     .disabled(recorder.isBusy)
@@ -208,6 +214,38 @@ struct ContentView: View {
                 }
             }
             if let e = model.error { Text(e).font(.caption).foregroundStyle(.red) }
+            diarizationRow
+        }
+    }
+
+    @ViewBuilder private var diarizationRow: some View {
+        if diarInstalled {
+            Toggle("Separate remote voices (Voice 1, Voice 2, …)", isOn: $diarEnabled)
+                .toggleStyle(.checkbox).font(.caption)
+        } else if diarInstalling {
+            HStack { ProgressView().controlSize(.small); Text("Installing speaker separation (pip + ~50 MB models)…").font(.caption) }
+        } else {
+            HStack(spacing: 6) {
+                Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+                Text("Speaker separation not installed").font(.caption)
+                if Diarization.setupScript != nil {
+                    Button("Install") { installDiarization() }.buttonStyle(.link).font(.caption)
+                }
+            }
+        }
+        if let e = diarError { Text(e).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+    }
+
+    private func installDiarization() {
+        guard let script = Diarization.setupScript else { return }
+        diarInstalling = true; diarError = nil
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = try? Shell.run("/bin/bash", [script.path])
+            DispatchQueue.main.async {
+                diarInstalling = false
+                diarInstalled = Diarization.isInstalled
+                if !diarInstalled { diarError = "Install failed:\n" + String((r?.output ?? "could not run script").suffix(400)) }
+            }
         }
     }
 

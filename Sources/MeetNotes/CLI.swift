@@ -9,6 +9,7 @@ enum CLI {
       --transcribe FILE.wav [--mic YOU.wav] [--name NAME]
                                      transcribe an existing recording to FILE.md next to it;
                                      with --mic, FILE is the Meet track and segments get You/Others labels
+      --diarize FILE.wav               print speaker turns for a 16 kHz mono file (needs setup-diarization.sh)
       --route-output on|off|status     send system audio through BlackHole (multi-output device) / restore
       --launch-at-login on|off|status  register the .app as a login item (run via the installed bundle)
       --md-from-json FILE.json [--name NAME]
@@ -52,6 +53,19 @@ enum CLI {
             } catch {
                 FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
                 return 1
+            }
+
+        case "--diarize":
+            guard let path = value(after: "--diarize") else { print(usage); return 2 }
+            do {
+                let norm = try Transcriber.normalize(URL(fileURLWithPath: path))
+                defer { try? FileManager.default.removeItem(at: norm) }
+                for t in try Diarization.run(wav16k: norm) {
+                    print(String(format: "%7.2f - %7.2f  speaker %d", t.start, t.end, t.speaker))
+                }
+                return 0
+            } catch {
+                FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); return 1
             }
 
         case "--route-output":

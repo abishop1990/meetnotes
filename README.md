@@ -49,15 +49,29 @@ and only your side is captured unless you use speakers.
 ```bash
 .build/release/MeetNotes --list-devices
 .build/release/MeetNotes --route-output on|off|status
+.build/release/MeetNotes --diarize meeting-others.wav
 .build/release/MeetNotes --transcribe meeting-others.wav --mic meeting-you.wav --name "Design review"
 .build/release/MeetNotes --transcribe meeting.wav --name "Standup"
 ```
 
 ## Speaker identification
 
-Whisper transcribes; it does not identify voices. The You / Others split comes from recording the two
-inputs as separate tracks and attributing each segment to the louder one. Telling remote participants
-apart would need a diarization model on the Meet track (pyannote or sherpa-onnx); not built yet.
+Whisper transcribes; it does not identify voices. Two layers add that:
+
+1. **You / Others** comes for free from recording the two inputs as separate tracks and attributing each
+   segment to the louder one.
+2. **Voice 1, Voice 2, …** on the remote side comes from an optional offline diarization pass
+   (sherpa-onnx: pyannote segmentation-3.0 + NeMo TitaNet speaker embeddings). Install it with the
+   *Install* link in the popover or:
+
+   ```bash
+   scripts/setup-diarization.sh     # venv + models under ~/.meetnotes, ~50 MB, offline afterwards
+   ```
+
+   The note then opens with a **Speakers** section (talk time and first appearance per voice) so the labels
+   can be renamed in one pass, by hand or by handing the file to an LLM with the attendee list. Remote speech
+   the separator could not place stays labelled *Others*. Accuracy is good for two to four clear voices and
+   drops when people talk over each other.
 
 ## Requirements
 
@@ -71,6 +85,7 @@ MIT
 ## Layout
 
 - `Recorder.swift` — AVCaptureSession with one file output per input device
+- `Diarization.swift` + `scripts/diarize.py` — optional sherpa-onnx speaker separation, Voice N attribution
 - `SystemOutput.swift` — CoreAudio: multi-output device creation, default output switch/restore
 - `AudioMix.swift` — sums the two tracks for whisper and keeps a per-track energy profile; `Diarizer` labels segments
 - `Transcriber.swift` — afconvert normalisation, whisper-cli invocation, JSON parse
