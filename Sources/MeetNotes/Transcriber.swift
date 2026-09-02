@@ -51,10 +51,10 @@ enum Transcriber {
     static func transcribe(wav: URL, prompt: String?) throws -> Transcript {
         let norm = try normalize(wav)
         defer { try? FileManager.default.removeItem(at: norm) }
-        let segments = try runWhisper(on: norm, prompt: prompt)
+        let (segments, rep) = Cleanup.dedupe(try runWhisper(on: norm, prompt: prompt))
         let energy = try AudioMix.energyProfile(norm)
         let kept = Diarizer.dropSilent(segments, energy: energy, binMs: AudioMix.binMs)
-        var t = Transcript(segments: kept, diagnostics: [AudioMix.describe("Track", energy)])
+        var t = Transcript(segments: kept, diagnostics: [AudioMix.describe("Track", energy), describe(rep)])
         try separateVoices(&t, remoteTrack: norm)
         return t
     }
@@ -69,14 +69,19 @@ enum Transcriber {
         let mixed = try AudioMix.mixToMono(a, b)
         defer { try? FileManager.default.removeItem(at: mixed.url) }
 
-        let segments = try runWhisper(on: mixed.url, prompt: prompt)
+        let (segments, rep) = Cleanup.dedupe(try runWhisper(on: mixed.url, prompt: prompt))
         let labelled = Diarizer.label(segments, others: mixed.energyA, you: mixed.energyB, binMs: AudioMix.binMs)
         var t = Transcript(segments: labelled, diagnostics: [
             AudioMix.describe("Meet track", mixed.energyA),
             AudioMix.describe("Mic track", mixed.energyB),
+            describe(rep),
         ])
         try separateVoices(&t, remoteTrack: a)
         return t
+    }
+
+    private static func describe(_ r: Cleanup.Report) -> String {
+        "Repetition cleanup: \(r.collapsedLoops) phrase loops collapsed, \(r.droppedSegments) duplicate segments dropped"
     }
 
     /// Optional pass: split the remote side into Voice 1..N when the diarization stack is installed.
@@ -107,6 +112,8 @@ enum Transcriber {
         var args = [
             "-m", Settings.modelURL.path, "-f", wav16k.path, "-l", "en",
             "-t", String(threads), "-np", "-oj", "-of", outBase.path,
+            "--max-context", "0",     // don't feed the previous window's text back in: the classic loop trigger
+            "--suppress-nst",         // no non-speech tokens
         ]
         if let prompt, !prompt.isEmpty { args += ["--prompt", prompt] }
 

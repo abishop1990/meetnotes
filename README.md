@@ -80,6 +80,11 @@ Whisper transcribes; it does not identify voices. Two layers add that:
    - The clustering threshold, default 0.7 (pyannote 3.1's tuned value); larger merges more. Set it with
      `defaults write com.alanbishop.meetnotes diarizationThreshold -float 0.8` or `--threshold` on the CLI.
 
+   **Repetition.** Whisper's decoder occasionally locks onto a phrase and repeats it many times. The app runs
+   whisper with `--max-context 0` (the usual trigger is feeding the previous window's text back in) and then
+   collapses any 2–8 word phrase repeated three or more times in a row, and drops back-to-back identical
+   segments. Single-word repeats ("no, no, no") are left alone. The Diagnostics block reports what was cleaned.
+
    Every note ends its header with a collapsed **Diagnostics** block: per-track signal levels and what the
    separator did. Audio is kept by default so a note can be regenerated with different settings:
 
@@ -103,5 +108,6 @@ MIT
 - `SystemOutput.swift` — CoreAudio: multi-output device creation, default output switch/restore
 - `AudioMix.swift` — sums the two tracks for whisper and keeps a per-track energy profile; `Diarizer` labels segments
 - `Transcriber.swift` — afconvert normalisation, whisper-cli invocation, JSON parse
+- `Cleanup.swift` — collapses whisper repetition loops
 - `MarkdownFormatter.swift` — paragraphs, timestamps, speaker labels, note skeleton
 - `ContentView.swift` / `MeetNotesApp.swift` — the menu bar popover

@@ -97,10 +97,12 @@ enum CLI {
         case "--md-from-json":
             guard let path = value(after: "--md-from-json") else { print(usage); return 2 }
             do {
-                let segments = try Transcriber.parse(json: Data(contentsOf: URL(fileURLWithPath: path)))
+                let raw = try Transcriber.parse(json: Data(contentsOf: URL(fileURLWithPath: path)))
+                let (segments, rep) = Cleanup.dedupe(raw)
                 let dur = segments.last.map { Double($0.toMs) / 1000 } ?? 0
                 let meta = NoteMetadata(title: name, start: Date(), duration: dur, device: "test", audioFiles: [])
-                print(MarkdownFormatter.render(meta: meta, segments: segments))
+                let diag = ["Repetition cleanup: \(rep.collapsedLoops) phrase loops collapsed, \(rep.droppedSegments) duplicate segments dropped"]
+                print(MarkdownFormatter.render(meta: meta, segments: segments, diagnostics: diag))
                 return 0
             } catch {
                 FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
