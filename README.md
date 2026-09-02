@@ -15,6 +15,7 @@ country, and most employers have a policy; this tool does nothing to hide itself
   voices apart from each other.
 - Audio files are deleted after a successful transcription unless *Keep audio file* is ticked. On a failure
   they are always kept so nothing is lost; re-run with the CLI below.
+- *Launch at login* in the popover registers the app as a login item (System Settings → General → Login Items).
 - `vocabulary.txt` in the notes folder is fed to whisper as a bias prompt. Add any term it keeps mangling.
 
 ## Setup (once)

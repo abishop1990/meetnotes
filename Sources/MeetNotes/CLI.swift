@@ -9,6 +9,7 @@ enum CLI {
       --transcribe FILE.wav [--mic YOU.wav] [--name NAME]
                                      transcribe an existing recording to FILE.md next to it;
                                      with --mic, FILE is the Meet track and segments get You/Others labels
+      --launch-at-login on|off|status  register the .app as a login item (run via the installed bundle)
       --md-from-json FILE.json [--name NAME]
                                      render whisper JSON to markdown on stdout (formatter test)
     """
@@ -51,6 +52,16 @@ enum CLI {
                 FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
                 return 1
             }
+
+        case "--launch-at-login":
+            switch value(after: "--launch-at-login") {
+            case "on":  do { try LaunchAtLogin.set(true) }  catch { print(error.localizedDescription); return 1 }
+            case "off": do { try LaunchAtLogin.set(false) } catch { print(error.localizedDescription); return 1 }
+            case "status": break
+            default: print(usage); return 2
+            }
+            print("launch at login: \(LaunchAtLogin.statusText)")
+            return 0
 
         case "--md-from-json":
             guard let path = value(after: "--md-from-json") else { print(usage); return 2 }

@@ -10,6 +10,8 @@ struct ContentView: View {
     @AppStorage(Settings.keepAudioKey) private var keepAudio: Bool = false
     @AppStorage(Settings.notesDirKey) private var notesDirPath: String = ""
     @State private var name: String = ""
+    @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
+    @State private var launchError: String? = nil
 
     private var whisperFound: Bool { Transcriber.findWhisper() != nil }
     private var ready: Bool { whisperFound && model.present && !(systemID.isEmpty && micID.isEmpty) }
@@ -58,6 +60,13 @@ struct ContentView: View {
 
             Toggle("Keep audio file after transcribing", isOn: $keepAudio)
                 .toggleStyle(.checkbox)
+            Toggle("Launch at login", isOn: $launchAtLogin)
+                .toggleStyle(.checkbox)
+                .onChange(of: launchAtLogin) { _, on in
+                    do { try LaunchAtLogin.set(on); launchError = nil }
+                    catch { launchError = error.localizedDescription; launchAtLogin = LaunchAtLogin.isEnabled }
+                }
+            if let e = launchError { Text(e).font(.caption).foregroundStyle(.red) }
 
             Divider()
             mainButton
@@ -72,6 +81,7 @@ struct ContentView: View {
         .onAppear {
             recorder.refreshDevices()
             model.refresh()
+            launchAtLogin = LaunchAtLogin.isEnabled
             let ids = Set(recorder.devices.map { $0.uniqueID })
             if systemID.isEmpty || !ids.contains(systemID) {
                 systemID = AudioDevices.preferredSystem(from: recorder.devices)?.uniqueID ?? ""
