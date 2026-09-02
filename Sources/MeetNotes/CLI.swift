@@ -9,6 +9,7 @@ enum CLI {
       --transcribe FILE.wav [--mic YOU.wav] [--name NAME]
                                      transcribe an existing recording to FILE.md next to it;
                                      with --mic, FILE is the Meet track and segments get You/Others labels
+      --route-output on|off|status     send system audio through BlackHole (multi-output device) / restore
       --launch-at-login on|off|status  register the .app as a login item (run via the installed bundle)
       --md-from-json FILE.json [--name NAME]
                                      render whisper JSON to markdown on stdout (formatter test)
@@ -52,6 +53,17 @@ enum CLI {
                 FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
                 return 1
             }
+
+        case "--route-output":
+            switch value(after: "--route-output") {
+            case "on":  do { try SystemOutput.route() }   catch { print(error.localizedDescription); return 1 }
+            case "off": do { try SystemOutput.restore() } catch { print(error.localizedDescription); return 1 }
+            case "status": break
+            default: print(usage); return 2
+            }
+            let st = SystemOutput.status()
+            print("output: \(st.outputName)  blackhole: \(st.blackHoleInstalled ? "installed" : "missing")  routed: \(st.routed)")
+            return 0
 
         case "--launch-at-login":
             switch value(after: "--launch-at-login") {

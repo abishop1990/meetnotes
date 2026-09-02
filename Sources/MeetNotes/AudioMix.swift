@@ -70,9 +70,48 @@ enum AudioMix {
     }
 }
 
+extension AudioMix {
+    /// Per-bin RMS of one 16 kHz mono file.
+    static func energyProfile(_ url: URL) throws -> [Float] {
+        let f = try AVAudioFile(forReading: url)
+        guard let fmt = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)
+        else { return [] }
+        let binFrames = Int(sampleRate) * binMs / 1000
+        var out: [Float] = []
+        while f.framePosition < f.length {
+            let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(binFrames * 100))!
+            try f.read(into: buf)
+            let n = Int(buf.frameLength); if n == 0 { break }
+            let p = buf.floatChannelData![0]
+            var i = 0
+            while i < n {
+                let end = min(n, i + binFrames)
+                var sum: Float = 0
+                for j in i..<end { sum += p[j] * p[j] }
+                out.append((sum / Float(end - i)).squareRoot())
+                i = end
+            }
+        }
+        return out
+    }
+}
+
 enum Diarizer {
     static let you = "You"
     static let others = "Others"
+    /// RMS below this (about -54 dBFS) is treated as silence. Whisper reliably hallucinates short phrases
+    /// like "Thank you." over silence, so segments with no energy on any track are dropped.
+    static let silenceRMS: Float = 0.002
+
+    static func meanEnergy(_ e: [Float], fromMs: Int, toMs: Int, binMs: Int) -> Float {
+        let lo = max(0, fromMs / binMs), hi = max(lo + 1, toMs / binMs)
+        let r = lo..<min(hi, e.count)
+        return r.isEmpty ? 0 : e[r].reduce(0, +) / Float(r.count)
+    }
+
+    static func dropSilent(_ segments: [Segment], energy: [Float], binMs: Int) -> [Segment] {
+        segments.filter { meanEnergy(energy, fromMs: $0.fromMs, toMs: $0.toMs, binMs: binMs) >= silenceRMS }
+    }
 
     /// Attribute each whisper segment to whichever track was louder over its span. Near-silent segments
     /// (whisper hallucinating on a pause) inherit the previous speaker rather than flipping.
@@ -82,16 +121,13 @@ enum Diarizer {
             guard !e.isEmpty else { return 0.002 }
             let s = e.sorted(); return max(0.002, s[s.count / 2] * 2)
         }
-        let floorO = floor(others), floorY = floor(you)
+        let floorO = max(floor(others), silenceRMS), floorY = max(floor(you), silenceRMS)
         var last = Diarizer.others
-        return segments.map { seg in
+        return segments.compactMap { seg in
             var s = seg
-            let lo = max(0, seg.fromMs / binMs), hi = max(lo + 1, seg.toMs / binMs)
-            func mean(_ e: [Float]) -> Float {
-                let r = lo..<min(hi, e.count)
-                return r.isEmpty ? 0 : e[r].reduce(0, +) / Float(r.count)
-            }
-            let eo = mean(others), ey = mean(you)
+            let eo = meanEnergy(others, fromMs: seg.fromMs, toMs: seg.toMs, binMs: binMs)
+            let ey = meanEnergy(you, fromMs: seg.fromMs, toMs: seg.toMs, binMs: binMs)
+            if eo < silenceRMS && ey < silenceRMS { return nil }
             let oSpeaking = eo > floorO, ySpeaking = ey > floorY
             switch (oSpeaking, ySpeaking) {
             case (true, false): last = Diarizer.others

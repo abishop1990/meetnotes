@@ -27,9 +27,13 @@ brew install --cask blackhole-2ch        # virtual audio device, needs your pass
 
 Model: `~/.whisper/ggml-large-v3-turbo.bin` (the app offers a download button if it is missing).
 
-After the reboot, in **Audio MIDI Setup**: `+` → *Create Multi-Output Device*, tick your speakers/headphones
-and *BlackHole 2ch*, then choose that device as the system output. You keep hearing the call; BlackHole gets a copy.
-In MeetNotes pick *BlackHole 2ch* as **Meet audio** and your microphone as **Your mic**.
+After the reboot, in MeetNotes pick *BlackHole 2ch* as **Meet audio** and your microphone as **Your mic**, then
+press **Route via BlackHole**. The app creates a Multi-Output Device (your speakers + BlackHole) and makes it the
+system output, so you keep hearing the call while BlackHole gets a copy. **Restore** switches back. The same thing
+can be done by hand in Audio MIDI Setup.
+
+While recording, the popover shows live levels for both tracks and warns if the Meet track is silent. Segments
+whisper produces over silence (its "Thank you." hallucination) are dropped.
 
 Without BlackHole the app still works with the mic alone, but the transcript is not split into You / Others
 and only your side is captured unless you use speakers.
@@ -44,6 +48,7 @@ and only your side is captured unless you use speakers.
 
 ```bash
 .build/release/MeetNotes --list-devices
+.build/release/MeetNotes --route-output on|off|status
 .build/release/MeetNotes --transcribe meeting-others.wav --mic meeting-you.wav --name "Design review"
 .build/release/MeetNotes --transcribe meeting.wav --name "Standup"
 ```
@@ -66,6 +71,7 @@ MIT
 ## Layout
 
 - `Recorder.swift` — AVCaptureSession with one file output per input device
+- `SystemOutput.swift` — CoreAudio: multi-output device creation, default output switch/restore
 - `AudioMix.swift` — sums the two tracks for whisper and keeps a per-track energy profile; `Diarizer` labels segments
 - `Transcriber.swift` — afconvert normalisation, whisper-cli invocation, JSON parse
 - `MarkdownFormatter.swift` — paragraphs, timestamps, speaker labels, note skeleton

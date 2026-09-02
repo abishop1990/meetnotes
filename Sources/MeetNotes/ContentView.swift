@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var name: String = ""
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @State private var launchError: String? = nil
+    @State private var route = SystemOutput.status()
+    @State private var routeError: String? = nil
 
     private var whisperFound: Bool { Transcriber.findWhisper() != nil }
     private var ready: Bool { whisperFound && model.present && !(systemID.isEmpty && micID.isEmpty) }
@@ -49,6 +51,8 @@ struct ContentView: View {
             if systemID.isEmpty {
                 Text("No Meet audio device: only your mic will be captured and the transcript will not be split into You / Others.")
                     .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            } else {
+                routingRow
             }
 
             HStack(spacing: 6) {
@@ -82,6 +86,7 @@ struct ContentView: View {
             recorder.refreshDevices()
             model.refresh()
             launchAtLogin = LaunchAtLogin.isEnabled
+            route = SystemOutput.status()
             let ids = Set(recorder.devices.map { $0.uniqueID })
             if systemID.isEmpty || !ids.contains(systemID) {
                 systemID = AudioDevices.preferredSystem(from: recorder.devices)?.uniqueID ?? ""
@@ -89,6 +94,41 @@ struct ContentView: View {
             if micID.isEmpty || !ids.contains(micID) {
                 micID = AudioDevices.preferredMic(from: recorder.devices)?.uniqueID ?? ""
             }
+        }
+    }
+
+    /// System output must go through BlackHole or the Meet track records silence.
+    private var routingRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: route.routed ? "checkmark.circle" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(route.routed ? .green : .orange)
+                Text(route.routed ? "System output → \(route.outputName) (BlackHole hears the call)"
+                                  : "System output is \(route.outputName): BlackHole hears nothing")
+                    .font(.caption).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                if route.blackHoleInstalled {
+                    Button(route.routed ? "Restore" : "Route via BlackHole") {
+                        do {
+                            if route.routed { try SystemOutput.restore() } else { try SystemOutput.route() }
+                            routeError = nil
+                        } catch { routeError = error.localizedDescription }
+                        route = SystemOutput.status()
+                    }
+                    .controlSize(.small)
+                    .disabled(recorder.isBusy)
+                }
+            }
+            if let e = routeError { Text(e).font(.caption).foregroundStyle(.red) }
+        }
+    }
+
+    private func meter(_ label: String, _ db: Float?) -> some View {
+        HStack(spacing: 6) {
+            Text(label).font(.caption).foregroundStyle(.secondary).frame(width: 34, alignment: .leading)
+            ProgressView(value: Double(max(0, min(1, ((db ?? -60) + 60) / 60))))
+                .tint((db ?? -60) > -50 ? .green : .orange)
+            Text(db.map { String(format: "%.0f dB", $0) } ?? "—").font(.caption).monospacedDigit().frame(width: 48, alignment: .trailing)
         }
     }
 
@@ -137,7 +177,16 @@ struct ContentView: View {
         case .failed(let msg):
             Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
         case .recording:
-            Text("Say at the top of the call that you're taking notes.").font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                if !systemID.isEmpty { meter("Meet", recorder.meetLevel) }
+                if !micID.isEmpty { meter("Mic", recorder.micLevel) }
+                if recorder.meetSilent {
+                    Text("No audio on the Meet track. System output is not going through BlackHole; use Route via BlackHole and restart the recording.")
+                        .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Say at the top of the call that you're taking notes.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
         default:
             EmptyView()
         }
@@ -216,14 +265,14 @@ struct ContentView: View {
         alert.messageText = "Capture Meet audio + your mic"
         alert.informativeText = """
         Your mic is captured directly. Meet's audio comes out of your speakers, so it needs a virtual \
-        device that mirrors the system output. One-time setup:
+        device that mirrors the system output.
 
-        1. Install BlackHole:  brew install --cask blackhole-2ch   (then reboot)
-        2. Open Audio MIDI Setup, click + → Create Multi-Output Device. Tick your speakers/headphones \
-        and BlackHole 2ch. Set it as the system output in the sound menu.
-        3. Back in MeetNotes, hit ↻ and pick BlackHole 2ch as "Meet audio" and your microphone as "Your mic".
+        1. Install BlackHole once:  brew install --cask blackhole-2ch   (then reboot)
+        2. Pick BlackHole 2ch as "Meet audio" and your microphone as "Your mic".
+        3. Press "Route via BlackHole". MeetNotes creates a Multi-Output Device (your speakers + BlackHole) \
+        and makes it the system output. "Restore" switches back. You can also do this by hand in Audio MIDI Setup.
 
-        Volume keys don't work on a Multi-Output Device; set the level before switching. Headphones keep \
+        Volume keys don't work while a Multi-Output Device is selected; set the level first. Headphones keep \
         your mic track clean, which makes the You / Others split more accurate.
         """
         alert.addButton(withTitle: "Open Audio MIDI Setup")

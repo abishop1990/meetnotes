@@ -46,7 +46,9 @@ enum Transcriber {
     static func transcribe(wav: URL, prompt: String?) throws -> [Segment] {
         let norm = try normalize(wav)
         defer { try? FileManager.default.removeItem(at: norm) }
-        return try runWhisper(on: norm, prompt: prompt)
+        let segments = try runWhisper(on: norm, prompt: prompt)
+        let energy = try AudioMix.energyProfile(norm)
+        return Diarizer.dropSilent(segments, energy: energy, binMs: AudioMix.binMs)
     }
 
     /// Two recordings made side by side (Meet output + your mic): transcribe the mix once, then label each

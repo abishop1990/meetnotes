@@ -25,6 +25,7 @@ final class Recorder: NSObject, ObservableObject {
     private struct Track {
         let device: AVCaptureDevice
         let output: AVCaptureAudioFileOutput
+        let connection: AVCaptureConnection
         let url: URL
         let role: Role
         enum Role { case others, you, single }
@@ -33,6 +34,12 @@ final class Recorder: NSObject, ObservableObject {
     @Published var state: State = .idle
     @Published var elapsed: TimeInterval = 0
     @Published var devices: [AVCaptureDevice] = []
+    /// Live input level in dBFS per role ("others" = Meet track, "you" = mic), while recording.
+    @Published var meetLevel: Float? = nil
+    @Published var micLevel: Float? = nil
+    /// True once the Meet track has stayed silent for several seconds of recording.
+    @Published var meetSilent = false
+    private var meetSeenSignal = false
 
     private var session: AVCaptureSession?
     private var tracks: [Track] = []
@@ -106,7 +113,7 @@ final class Recorder: NSObject, ObservableObject {
             switch role { case .others: suffix = "-others"; case .you: suffix = "-you"; case .single: suffix = "" }
             let url = dir.appendingPathComponent(base + suffix + ".wav")
             try? FileManager.default.removeItem(at: url)
-            built.append(Track(device: device, output: out, url: url, role: role))
+            built.append(Track(device: device, output: out, connection: conn, url: url, role: role))
         }
         s.commitConfiguration()
         s.startRunning()
@@ -116,11 +123,33 @@ final class Recorder: NSObject, ObservableObject {
         tracks = built
         finished = [:]
         elapsed = 0
+        meetLevel = nil; micLevel = nil; meetSilent = false; meetSeenSignal = false
         state = .recording
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.elapsed = Date().timeIntervalSince(self.startDate)
+            self.sampleLevels()
+        }
+    }
+
+    private func level(_ t: Track) -> Float? {
+        let chans = t.connection.audioChannels
+        guard !chans.isEmpty else { return nil }
+        return chans.map { $0.averagePowerLevel }.max()
+    }
+
+    private func sampleLevels() {
+        for t in tracks {
+            let l = level(t)
+            switch t.role {
+            case .others:
+                meetLevel = l
+                if let l, l > -50 { meetSeenSignal = true }
+                meetSilent = !meetSeenSignal && elapsed > 6
+            case .you, .single:
+                micLevel = l
+            }
         }
     }
 
@@ -128,6 +157,7 @@ final class Recorder: NSObject, ObservableObject {
         guard isRecording else { return }
         timer?.invalidate()
         timer = nil
+        meetLevel = nil; micLevel = nil
         state = .transcribing
         for t in tracks { t.output.stopRecording() }
     }
