@@ -80,6 +80,11 @@ Whisper transcribes; it does not identify voices. Two layers add that:
    - The clustering threshold, default 0.7 (pyannote 3.1's tuned value); larger merges more. Set it with
      `defaults write com.alanbishop.meetnotes diarizationThreshold -float 0.8` or `--threshold` on the CLI.
 
+   **Speakers instead of headphones.** The mic then hears a delayed copy of everyone else. The mix whisper
+   gets is built per 100 ms slice: when one track is ~10 dB louder the other is muted for that slice, with a
+   20 ms crossfade, so remote sentences reach whisper once, from the clean Meet track. Speaker separation
+   already reads only the Meet track. Headphones still give the best result.
+
    **Repetition.** Whisper's decoder occasionally locks onto a phrase and repeats it many times. The app runs
    whisper with `--max-context 0` (the usual trigger is feeding the previous window's text back in) and then
    collapses any 2–8 word phrase repeated three or more times in a row, and drops back-to-back identical
@@ -106,7 +111,7 @@ MIT
 - `Recorder.swift` — AVCaptureSession with one file output per input device
 - `Diarization.swift` + `scripts/diarize.py` — optional sherpa-onnx speaker separation, Voice N attribution
 - `SystemOutput.swift` — CoreAudio: multi-output device creation, default output switch/restore
-- `AudioMix.swift` — sums the two tracks for whisper and keeps a per-track energy profile; `Diarizer` labels segments
+- `AudioMix.swift` — echo-suppressing mix of the two tracks for whisper plus per-track energy profiles; `Diarizer` labels segments
 - `Transcriber.swift` — afconvert normalisation, whisper-cli invocation, JSON parse
 - `Cleanup.swift` — collapses whisper repetition loops
 - `MarkdownFormatter.swift` — paragraphs, timestamps, speaker labels, note skeleton

@@ -10,7 +10,15 @@ enum AudioMix {
         let url: URL
         let energyA: [Float]   // RMS per bin
         let energyB: [Float]
+        let duckedBins: Int    // bins where the quieter track was muted
+        let totalBins: Int
     }
+
+    /// When one track is clearly louder over a bin (10 dB), the other is muted for that bin. The mic track
+    /// carries a speaker echo of every remote sentence; summing it back in gives whisper a reverberant
+    /// double, which is exactly the input that triggers its repetition loops.
+    static let duckRatio: Float = 3.2   // ~10 dB
+    static let rampFrames = 320         // 20 ms crossfade at a gain change
 
     static func mixToMono(_ a: URL, _ b: URL) throws -> Result {
         let fa = try AVAudioFile(forReading: a)
@@ -27,6 +35,8 @@ enum AudioMix {
         let binFrames = Int(sampleRate) * binMs / 1000
         let chunk = AVAudioFrameCount(binFrames * 100)   // 10 s per read
         var energyA: [Float] = [], energyB: [Float] = []
+        var ducked = 0
+        var gainA: Float = 1, gainB: Float = 1          // carried across chunk boundaries
 
         func read(_ f: AVAudioFile) throws -> AVAudioPCMBuffer? {
             guard f.framePosition < f.length else { return nil }
@@ -40,33 +50,41 @@ enum AudioMix {
             let bb = try read(fb)
             if ba == nil && bb == nil { break }
             let n = Int(max(ba?.frameLength ?? 0, bb?.frameLength ?? 0))
-            let mix = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(n))!
-            mix.frameLength = AVAudioFrameCount(n)
             let pa = ba?.floatChannelData?[0], pb = bb?.floatChannelData?[0]
             let la = Int(ba?.frameLength ?? 0), lb = Int(bb?.frameLength ?? 0)
+            @inline(__always) func x(_ i: Int) -> Float { i < la ? pa![i] : 0 }
+            @inline(__always) func y(_ i: Int) -> Float { i < lb ? pb![i] : 0 }
+
+            let mix = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(n))!
+            mix.frameLength = AVAudioFrameCount(n)
             let pm = mix.floatChannelData![0]
-            for i in 0..<n {
-                let x = i < la ? pa![i] : 0
-                let y = i < lb ? pb![i] : 0
-                pm[i] = max(-1, min(1, x + y))
-            }
-            try outFile.write(from: mix)
 
             var i = 0
             while i < n {
                 let end = min(n, i + binFrames)
                 var sa: Float = 0, sb: Float = 0
-                for j in i..<end {
-                    if j < la { sa += pa![j] * pa![j] }
-                    if j < lb { sb += pb![j] * pb![j] }
-                }
+                for j in i..<end { sa += x(j) * x(j); sb += y(j) * y(j) }
                 let cnt = Float(end - i)
-                energyA.append((sa / cnt).squareRoot())
-                energyB.append((sb / cnt).squareRoot())
+                let ea = (sa / cnt).squareRoot(), eb = (sb / cnt).squareRoot()
+                energyA.append(ea); energyB.append(eb)
+
+                var ta: Float = 1, tb: Float = 1
+                if ea > eb * duckRatio && ea >= Diarizer.silenceRMS { tb = 0 }
+                else if eb > ea * duckRatio && eb >= Diarizer.silenceRMS { ta = 0 }
+                if ta == 0 || tb == 0 { ducked += 1 }
+
+                for j in i..<end {
+                    let k = j - i
+                    let f = k < rampFrames ? Float(k) / Float(rampFrames) : 1
+                    let ga = gainA + (ta - gainA) * f, gb = gainB + (tb - gainB) * f
+                    pm[j] = max(-1, min(1, x(j) * ga + y(j) * gb))
+                }
+                gainA = ta; gainB = tb
                 i = end
             }
+            try outFile.write(from: mix)
         }
-        return Result(url: out, energyA: energyA, energyB: energyB)
+        return Result(url: out, energyA: energyA, energyB: energyB, duckedBins: ducked, totalBins: energyA.count)
     }
 }
 

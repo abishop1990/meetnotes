@@ -74,6 +74,7 @@ enum Transcriber {
         var t = Transcript(segments: labelled, diagnostics: [
             AudioMix.describe("Meet track", mixed.energyA),
             AudioMix.describe("Mic track", mixed.energyB),
+            "Mix: echo suppression muted the quieter track in \(mixed.totalBins > 0 ? mixed.duckedBins * 100 / mixed.totalBins : 0)% of 100 ms slices",
             describe(rep),
         ])
         try separateVoices(&t, remoteTrack: a)
